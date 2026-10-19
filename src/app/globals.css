@@ -1,0 +1,484 @@
+@import "tailwindcss";
+
+:root {
+  /* Brand */
+  --primary-green: #4E9C81;     /* Muted Sage Green */
+  --primary-light: #6AB89E;     /* Sage Accent */
+  --primary-dark: #37705C;      /* Deep Sage */
+
+  /* Neutrals */
+  --background: #FFFFFF;
+  --surface: #FFFFFF;
+  --surface-highlight: #EFF2F0;
+
+  /* Text */
+  --text-primary: #1A1D1C;
+  --text-secondary: #707773;
+  --text-disabled: #A2AAA6;
+
+  /* Chat Bubbles */
+  --user-bubble-bg: #4E9C81;
+  --user-bubble-text: #FFFFFF;
+  --bot-bubble-bg: #EFF2F0;
+  --bot-bubble-text: #1A1D1C;
+
+  /* Borders & Focus */
+  --accent-border: #E0E4E1;
+  --focus-ring: #6AB89E;
+  --error-color: #D32F2F;
+
+  /* Checklist */
+  --checklist-unchecked-text: var(--text-primary);
+  --checklist-checked-text: var(--text-secondary);
+  --checklist-checkbox-border: var(--text-secondary);
+
+  /* Offline Banner Alert */
+  --offline-bg: rgba(78, 156, 129, 0.08);
+  --offline-border: var(--primary-green);
+  --offline-text: var(--primary-green);
+
+  /* Suggestion Chips */
+  --chip-bg: rgba(78, 156, 129, 0.08);
+  --chip-border: #E0E4E1;
+  --chip-text: #4E9C81;
+
+  /* Header */
+  --header-bg: rgba(255, 255, 255, 0.85);
+
+  /* Shadows */
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.08);
+
+  /* Motion */
+  --transition-speed: 250ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Scrollbar Theme Variables */
+  --scrollbar-thumb: rgba(78, 156, 129, 0.2);
+  --scrollbar-thumb-hover: rgba(78, 156, 129, 0.55);
+
+  /* Dynamic Fluid Typography scale */
+  --fs-h1: 1.25rem;
+  --fs-h2: 1.125rem;
+  --fs-body-large: 0.9375rem;
+  --fs-body-small: 0.8125rem;
+  --fs-button: 0.8125rem;
+  --fs-caption: 0.6875rem;
+}
+
+@media (min-width: 600px) {
+  :root {
+    --fs-h1: 1.5rem;
+    --fs-h2: 1.25rem;
+    --fs-body-large: 1rem;
+    --fs-body-small: 0.875rem;
+    --fs-button: 0.875rem;
+    --fs-caption: 0.75rem;
+  }
+}
+
+[data-theme="dark"] {
+  --background: #151716;
+  --surface: #1E2120;
+  --surface-highlight: #252827;
+
+  --text-primary: #EFF2F0;
+  --text-secondary: #9CA5A0;
+  --text-disabled: #5B625E;
+
+  --bot-bubble-bg: #202322;
+  --bot-bubble-text: var(--text-primary);
+
+  --accent-border: #2A2E2C;
+
+  --checklist-unchecked-text: var(--text-primary);
+  --checklist-checked-text: var(--text-secondary);
+  --checklist-checkbox-border: var(--text-secondary);
+
+  --offline-bg: rgba(106, 184, 158, 0.12);
+  --offline-border: var(--primary-light);
+  --offline-text: var(--primary-light);
+
+  --chip-bg: rgba(106, 184, 158, 0.12);
+  --chip-border: #2A2E2C;
+  --chip-text: #6AB89E;
+
+  --header-bg: rgba(21, 23, 22, 0.85);
+
+  /* Scrollbar Theme Variables (Dark Mode) */
+  --scrollbar-thumb: rgba(106, 184, 158, 0.25);
+  --scrollbar-thumb-hover: rgba(106, 184, 158, 0.6);
+
+  --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.2);
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--background);
+  color: var(--text-primary);
+  transition: background-color var(--transition-speed) ease, color var(--transition-speed) ease;
+}
+
+/* Fluid Typography Mappings */
+h1, .text-h1 {
+  font-size: var(--fs-h1);
+  line-height: 1.4;
+  font-weight: 700;
+}
+h2, .text-h2 {
+  font-size: var(--fs-h2);
+  line-height: 1.33;
+  font-weight: 600;
+}
+.text-body-large {
+  font-size: var(--fs-body-large);
+  line-height: 1.5;
+}
+.text-body-small {
+  font-size: var(--fs-body-small);
+  line-height: 1.42;
+}
+.text-button {
+  font-size: var(--fs-button);
+  line-height: 1.42;
+  font-weight: 500;
+}
+.text-caption {
+  font-size: var(--fs-caption);
+  line-height: 1.33;
+}
+
+/* Accessibility Focus Outline */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex="0"]:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--focus-ring) !important;
+  outline-offset: 2px !important;
+}
+
+/* Keyboard Skip Link */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 16px;
+  background-color: var(--primary-green);
+  color: #FFFFFF;
+  padding: 10px 20px;
+  z-index: 9999;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: var(--fs-body-small);
+  text-decoration: none;
+  box-shadow: var(--shadow-card);
+  transition: top 0.2s ease;
+}
+.skip-link:focus {
+  top: 16px;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--text-disabled);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* Glassmorphism Header */
+.glass-header {
+  background-color: var(--header-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--accent-border);
+}
+
+/* Custom Input Fields */
+.input-field {
+  background-color: var(--surface-highlight);
+  border: 1px solid var(--accent-border);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--transition-speed), background-color var(--transition-speed);
+}
+.input-field:hover {
+  border-color: rgba(78, 156, 129, 0.4);
+}
+.input-field:focus {
+  border-color: var(--primary-green);
+  background-color: var(--background);
+  box-shadow: 0 0 0 3px rgba(78, 156, 129, 0.15);
+}
+.input-field.error {
+  border-color: var(--error-color);
+}
+
+/* Message Entry Animation */
+@keyframes message-entry {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-message {
+  animation: message-entry var(--transition-speed) var(--ease-out-expo) forwards;
+}
+
+/* Custom Checkbox spring scale animation */
+@keyframes checkmark-spring {
+  from {
+    transform: scale(0);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.animate-check {
+  animation: checkmark-spring 150ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Custom checkbox components */
+.checkbox-custom {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--checklist-checkbox-border);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 150ms, background-color 150ms;
+}
+
+.checkbox-svg {
+  width: 11px;
+  height: 11px;
+  stroke: white;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  transform: scale(0);
+  transition: transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.checklist-item.checked .checkbox-custom {
+  background-color: var(--primary-green);
+  border-color: var(--primary-green);
+}
+
+.checklist-item.checked .checkbox-svg {
+  transform: scale(1);
+}
+
+/* Mobile bottom drawer styles */
+.drawer-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 50;
+}
+
+.drawer-content {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--background);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  z-index: 51;
+  padding: 24px 16px;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.15);
+  transform: translateY(100%);
+  transition: transform 300ms var(--ease-out-expo);
+}
+
+.drawer-content.open {
+  transform: translateY(0);
+}
+
+/* Scrollbar utility to hide scrollbar completely */
+.scrollbar-none {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
+
+/* Suggestion Chip default styles */
+.chip {
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  min-height: 42px;
+  height: auto;
+  padding: 10px 16px;
+  border: 1px solid var(--chip-border);
+  background-color: var(--chip-bg);
+  color: var(--chip-text);
+  border-radius: 14px;
+  transition: all 200ms var(--ease-out-expo);
+  cursor: pointer;
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+}
+.chip:hover {
+  background-color: rgba(78, 156, 129, 0.1);
+  border-color: rgba(78, 156, 129, 0.3);
+}
+.chip:active {
+  transform: scale(0.98);
+}
+
+/* Typing indicator dot bounce animation */
+.typing-indicator {
+  background-color: var(--bot-bubble-bg);
+  padding: 12px 16px;
+  border-radius: 18px;
+  border-bottom-left-radius: 4px;
+}
+
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  background-color: var(--text-secondary);
+  border-radius: 50%;
+  animation: typing-bounce 1.4s infinite ease-in-out both;
+}
+
+.typing-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes typing-bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+/* Hide scrollbars but keep scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Safari and Chrome */
+}
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Global Custom Scrollbar for all scrollable elements */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--primary-green);
+}
+
+/* Firefox scrollbar support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* Custom Thin Scrollbar Class */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:active {
+  background-color: var(--primary-green);
+}
+
+/* Search input focus styling override */
+.search-input:focus,
+.search-input:focus-visible {
+  border-color: var(--primary-green) !important;
+  box-shadow: 0 0 0 3px rgba(78, 156, 129, 0.15) !important;
+  outline: none !important;
+}
+
+/* Chat input focus visible styling overrides */
+.chat-input:focus,
+.chat-input:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Reduced-motion floor (DESIGN.md product-register requirement).
+   Suppress all CSS animations/transitions, stop infinite loops, and snap
+   animated elements to their end state for users who request reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* The typing indicator's keyframe ends at scale(0); keep the dots visible
+     (static) instead of collapsing them. */
+  .typing-dot {
+    animation: none !important;
+    transform: scale(1) !important;
+  }
+}

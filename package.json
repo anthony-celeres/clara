@@ -1,0 +1,43 @@
+{
+  "name": "clara",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint",
+    "ingest:kb": "node scripts/ingest-kb.mjs"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^3.0.81",
+    "@ai-sdk/react": "^3.0.204",
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.108.1",
+    "@tanstack/react-query": "^5.101.0",
+    "@xyflow/react": "^12.11.1",
+    "ai": "^6.0.202",
+    "cheerio": "^1.2.0",
+    "firebase": "^12.14.0",
+    "firebase-admin": "^14.0.0",
+    "framer-motion": "^12.40.0",
+    "franc-min": "^6.2.0",
+    "localforage": "^1.10.0",
+    "lucide-react": "^1.18.0",
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "serwist": "^9.5.11"
+  },
+  "devDependencies": {
+    "@serwist/next": "^9.5.11",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
