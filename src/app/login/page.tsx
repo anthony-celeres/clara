@@ -70,6 +70,19 @@ function LoginFormContent() {
         if (error) {
           setErrorMsg(error.message);
         } else if (data?.user) {
+          // In live mode, ensure the user record exists in public.users
+          if (getSupabaseMode() === 'live') {
+            try {
+              await supabase.from('users').upsert({
+                user_id: data.user.id,
+                email: data.user.email ?? email,
+                role: 'community',
+                created_at: new Date().toISOString()
+              }, { onConflict: 'user_id' });
+            } catch (err) {
+              console.warn('Could not populate users record:', err);
+            }
+          }
           // Success
           router.push('/chat');
         }

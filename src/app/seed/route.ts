@@ -53,56 +53,32 @@ export async function GET() {
     }
 
     // ========================================
-    // 3. Insert personas (handle missing columns)
+    // 3. Insert personas
     // ========================================
     console.log('👤 Inserting personas...')
-    
-    // First, check which columns exist in the personas table
-    const { data: personasColumns, error: columnsError } = await supabase
+
+    // Map PERSONAS_SEED to the schema columns defined in PostgreSQL
+    const validPersonas = PERSONAS_SEED.map((p) => ({
+      persona_id: p.persona_id,
+      name: p.name,
+      avatar: p.avatar,
+      age: p.age,
+      address: p.address,
+      backstory: p.backstory,
+      problem_type: p.problem_type,
+      is_active: true
+    }));
+
+    const { data: personasData, error: personasError } = await supabase
       .from('personas')
-      .select('*')
-      .limit(0)
+      .upsert(validPersonas, { onConflict: 'persona_id' })
+      .select()
 
-    // Get column names from the response
-    const existingColumns = personasColumns ? Object.keys(personasColumns) : []
-    console.log('📋 Existing columns in personas:', existingColumns)
-
-    // Filter PERSONAS_SEED to only include columns that exist
-    const personasToInsert = PERSONAS_SEED.map((persona) => {
-      // Define the fields we want to insert
-      const fields: any = {}
-      
-      // Only add fields that exist in the table
-      const allFields = ['persona_id', 'name', 'avatar', 'age', 'address', 'backstory', 'problem_type', 'test_query', 'checklist_items', 'is_active']
-      
-      for (const field of allFields) {
-        if (field in persona && existingColumns.includes(field)) {
-          fields[field] = persona[field as keyof typeof persona]
-        } else if (field in persona && !existingColumns.includes(field)) {
-          console.log(`⚠️ Column '${field}' not found in personas table – skipping`)
-        }
-      }
-      
-      return fields
-    })
-
-    // Filter out empty objects
-    const validPersonas = personasToInsert.filter(p => Object.keys(p).length > 0)
-
-    if (validPersonas.length === 0) {
-      results.push('⚠️ No valid personas to insert – no columns match the table schema')
+    if (personasError) {
+      results.push(`❌ Personas: ${personasError.message}`)
+      hasError = true
     } else {
-      const { data: personasData, error: personasError } = await supabase
-        .from('personas')
-        .upsert(validPersonas, { onConflict: 'persona_id' })
-        .select()
-
-      if (personasError) {
-        results.push(`❌ Personas: ${personasError.message}`)
-        hasError = true
-      } else {
-        results.push(`✅ Personas: Inserted ${personasData?.length || 0} personas`)
-      }
+      results.push(`✅ Personas: Inserted ${personasData?.length || 0} personas`)
     }
 
     // ========================================

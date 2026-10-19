@@ -617,20 +617,36 @@ export default function AdminDashboardPage() {
       requirements_json: reqs
     };
 
+    let kbId = 101;
+    if (formCategory === 'Marriage') kbId = 104;
+    else if (formCategory === 'Death') kbId = 105;
+
     try {
       if (isCreating) {
-        // Create
+        // Create - associate valid kb_id and omit category (belongs to knowledge_base)
         const { error } = await supabase.from('guides').insert({
-          ...guidePayload,
-          guide_id: Math.floor(Math.random() * 1000) + 200,
-          kb_id: Math.floor(Math.random() * 1000) + 300
+          title: formTitle,
+          language: formLanguage,
+          fees_text: formFees,
+          tips: formTips,
+          steps_json: steps,
+          requirements_json: reqs,
+          kb_id: kbId
         });
 
         if (error) throw error;
         triggerToast("Matagumpay na idinagdag ang bagong gabay.");
       } else if (editingGuide) {
-        // Update
-        const { error } = await supabase.from('guides').update(guidePayload).eq('guide_id', editingGuide.guide_id);
+        // Update - omit category from guides table update
+        const { error } = await supabase.from('guides').update({
+          title: formTitle,
+          language: formLanguage,
+          fees_text: formFees,
+          tips: formTips,
+          steps_json: steps,
+          requirements_json: reqs,
+          kb_id: kbId
+        }).eq('guide_id', editingGuide.guide_id);
         if (error) throw error;
         triggerToast("Matagumpay na in-update ang gabay.");
       }

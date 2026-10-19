@@ -2,34 +2,34 @@ import { useEffect, useState } from 'react';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
+function applyTheme(mode: ThemeMode) {
+  if (typeof window === 'undefined') return;
+
+  const root = document.documentElement;
+  let effectiveTheme: 'light' | 'dark' = 'light';
+
+  if (mode === 'system') {
+    const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    effectiveTheme = systemDark ? 'dark' : 'light';
+  } else {
+    effectiveTheme = mode as 'light' | 'dark';
+  }
+
+  root.setAttribute('data-theme', effectiveTheme);
+  localStorage.setItem('clara-theme-preference', mode);
+}
+
 export function useTheme() {
-  const [theme, setTheme] = useState<ThemeMode>('system');
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('clara-theme-preference') as ThemeMode) || 'system';
+    }
+    return 'system';
+  });
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    // Load initial preference
-    const saved = localStorage.getItem('clara-theme-preference') as ThemeMode || 'system';
-    setTheme(saved);
-    applyTheme(saved);
-  }, []);
-
-  const applyTheme = (mode: ThemeMode) => {
-    if (typeof window === 'undefined') return;
-
-    const root = document.documentElement;
-    let effectiveTheme: 'light' | 'dark' = 'light';
-
-    if (mode === 'system') {
-      const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      effectiveTheme = systemDark ? 'dark' : 'light';
-    } else {
-      effectiveTheme = mode as 'light' | 'dark';
-    }
-
-    root.setAttribute('data-theme', effectiveTheme);
-    localStorage.setItem('clara-theme-preference', mode);
-  };
+    applyTheme(theme);
+  }, [theme]);
 
   const cycleTheme = () => {
     let nextTheme: ThemeMode = 'light';

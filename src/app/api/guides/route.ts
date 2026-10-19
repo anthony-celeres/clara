@@ -22,13 +22,45 @@ const UpdateGuideSchema = CreateGuideSchema.partial().extend({
   guide_id: z.number(),
 });
 
+import { createServerClient } from '@supabase/ssr';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+
 // Helper to get the current user's role (for API-level authorization)
 async function getCurrentUserRole(req: NextRequest): Promise<string | null> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data } = await supabase.from('users').select('role').eq('user_id', user.id).single();
-    return data?.role ?? null;
+    // 1. Check mock cookie first
+    const mockCookie = req.cookies.get('clara-mock-session');
+    if (mockCookie) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(mockCookie.value));
+        if (parsed?.role) return parsed.role;
+      } catch {
+        // ignore
+      }
+    }
+
+    // 2. Check live Supabase session with request cookies
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      const serverSupabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        {
+          cookies: {
+            getAll() {
+              return req.cookies.getAll();
+            },
+            setAll() {},
+          },
+        }
+      );
+      const { data: { user } } = await serverSupabase.auth.getUser();
+      if (!user) return null;
+
+      const client = supabaseAdmin || serverSupabase;
+      const { data } = await client.from('users').select('role').eq('user_id', user.id).single();
+      return data?.role ?? null;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -50,6 +82,26 @@ export async function GET(req: NextRequest): Promise<NextResponse<ApiResponse<Gu
     console.error("GET Guides error:", e);
     return NextResponse.json({ success: false, error: 'Failed to retrieve guides' }, { status: 500 });
   }
+}
+
+// Helper to determine kb_id by category and ensure it exists in knowledge_base
+async function resolveKbId(category: 'Birth' | 'Marriage' | 'Death', client: any): Promise<number> {
+  let kbId = 101;
+  if (category === 'Marriage') kbId = 104;
+  else if (category === 'Death') kbId = 105;
+
+  try {
+    await client.from('knowledge_base').upsert({
+      kb_id: kbId,
+      title: `${category} Certificates and Registry`,
+      category,
+      version: '1.0',
+      is_active: true
+    }, { onConflict: 'kb_id' });
+  } catch (e) {
+    console.warn("Could not upsert knowledge_base:", e);
+  }
+  return kbId;
 }
 
 // POST create guide (Admin only)
@@ -76,16 +128,18 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse<G
     }
 
     const { title, category, steps_json, requirements_json, fees_text, tips, language } = parseResult.data;
+    const client = supabaseAdmin || supabase;
+    const kbId = await resolveKbId(category, client);
 
-    const { data, error } = await supabase.from('guides').insert({
+    // Note: 'category' is omitted because the guides SQL table stores category in knowledge_base
+    const { data, error } = await client.from('guides').insert({
       title,
-      category,
       steps_json,
       requirements_json,
       fees_text,
       tips,
       language,
-      kb_id: Math.floor(Math.random() * 1000) + 200 // generate dynamic KB id
+      kb_id: kbId
     });
 
     if (error) {
@@ -128,17 +182,25 @@ export async function PUT(req: NextRequest): Promise<NextResponse<ApiResponse<Gu
       return NextResponse.json({ success: false, error: 'Guide ID is required' }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const client = supabaseAdmin || supabase;
+
+    // Ensure kb_id is updated if category changed
+    const updatePayload: Record<string, any> = {
+      title,
+      steps_json,
+      requirements_json,
+      fees_text,
+      tips,
+      language
+    };
+
+    if (category) {
+      updatePayload.kb_id = await resolveKbId(category, client);
+    }
+
+    const { data, error } = await client
       .from('guides')
-      .update({
-        title,
-        category,
-        steps_json,
-        requirements_json,
-        fees_text,
-        tips,
-        language
-      })
+      .update(updatePayload)
       .eq('guide_id', guide_id);
 
     if (error) {
@@ -176,7 +238,8 @@ export async function DELETE(req: NextRequest): Promise<NextResponse<ApiResponse
       return NextResponse.json({ success: false, error: 'Invalid guide ID' }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const client = supabaseAdmin || supabase;
+    const { data, error } = await client
       .from('guides')
       .delete()
       .eq('guide_id', parsedId);

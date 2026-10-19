@@ -5,12 +5,15 @@ import { GUIDES_SEED, Guide } from './seed-data';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-// Check if we have real Supabase keys
+// Check if we have real Supabase keys (allows explicit mock override via NEXT_PUBLIC_FORCE_MOCK)
 const isLiveSupabase = 
-  supabaseUrl && 
-  supabaseUrl !== 'your_supabase_url' && 
-  supabaseAnonKey && 
-  supabaseAnonKey !== 'your_supabase_anon_key';
+  process.env.NEXT_PUBLIC_FORCE_MOCK !== 'true' &&
+  Boolean(
+    supabaseUrl && 
+    supabaseUrl !== 'your_supabase_url' && 
+    supabaseAnonKey && 
+    supabaseAnonKey !== 'your_supabase_anon_key'
+  );
 
 // Define the real Supabase client if keys are present.
 // In the BROWSER, use createBrowserClient (@supabase/ssr) so the auth session is
@@ -269,8 +272,13 @@ function createMockSupabaseClient() {
     return queryBuilder;
   };
 
+  const rpc = async (_fnName: string, _args?: any) => {
+    return { data: [], error: null };
+  };
+
   return {
     auth: mockAuth,
-    from
+    from,
+    rpc
   };
 }

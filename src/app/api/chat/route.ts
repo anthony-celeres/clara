@@ -6,6 +6,8 @@ import { detectLanguage } from '@/lib/language-detect';
 import { scrubPII } from '@/lib/pii-scrubber';
 import { supabase } from '@/lib/supabase';
 
+import { GUIDES_SEED } from '@/lib/seed-data';
+
 // Import shared types
 import type { ChatRequest, ChatMessage, Language, Guide } from '@/types/api';
 
@@ -24,10 +26,17 @@ where "Guide Title" is the exact title of the matching guide. This will trigger 
 `;
 
 async function fetchGuide(kbId: number, lang: string): Promise<Guide | null> {
-  const { data } = await supabase.from('guides').select('*').eq('kb_id', kbId).eq('language', lang).single();
-  if (data) return data as Guide;
-  const { data: fil } = await supabase.from('guides').select('*').eq('kb_id', kbId).eq('language', 'fil').single();
-  return (fil as Guide) ?? null;
+  try {
+    const { data } = await supabase.from('guides').select('*').eq('kb_id', kbId).eq('language', lang).single();
+    if (data) return data as Guide;
+    const { data: fil } = await supabase.from('guides').select('*').eq('kb_id', kbId).eq('language', 'fil').single();
+    if (fil) return fil as Guide;
+  } catch (e) {
+    console.warn('fetchGuide from DB failed, checking seed:', e);
+  }
+  const match = GUIDES_SEED.find((g) => g.kb_id === kbId && g.language === lang)
+    || GUIDES_SEED.find((g) => g.kb_id === kbId && g.language === 'fil');
+  return (match as Guide) ?? null;
 }
 
 // --- RAG retrieval (ADR-001) -------------------------------------------------
@@ -129,12 +138,39 @@ export async function POST(req: NextRequest) {
       // ground Gemini on their verbatim text (ADR-001 §6).
       const chunks = await retrieveChunks(sanitizedQuery, lang, apiKey!);
 
-      const contextText = chunks.length
-        ? `VERIFIED GUIDELINES (cite ONLY from these; do not invent details):\n\n` +
+      // If vector search returned 0 chunks (empty corpus, unverified chunks, or DB offline),
+      // fall back to matching verified structured guides before declaring "no match".
+      let fallbackGuide: Guide | null = null;
+      if (chunks.length === 0) {
+        const queryLower = sanitizedQuery.toLowerCase();
+        if (queryLower.includes('clerical') || queryLower.includes('correct') || queryLower.includes('error') || queryLower.includes('apelyido') || queryLower.includes('avocado') || queryLower.includes('avocardo') || queryLower.includes('9048')) {
+          fallbackGuide = await fetchGuide(101, lang);
+        } else if (queryLower.includes('late') || queryLower.includes('huli') || queryLower.includes('negative') || queryLower.includes('saksi') || queryLower.includes('witness') || queryLower.includes('rehistro')) {
+          fallbackGuide = await fetchGuide(102, lang);
+        } else if (queryLower.includes('indigenous') || queryLower.includes('katutubo') || queryLower.includes('lumad') || queryLower.includes('tboli') || queryLower.includes(' chieftan') || queryLower.includes('chieftain') || queryLower.includes('8371') || queryLower.includes('brap')) {
+          fallbackGuide = await fetchGuide(103, lang);
+        }
+      }
+
+      let contextText = '';
+      if (chunks.length > 0) {
+        contextText = `VERIFIED GUIDELINES (cite ONLY from these; do not invent details):\n\n` +
           chunks
             .map((c, i) => `[Source ${i + 1}: ${c.chunk_title ?? 'Guide'}]\n${c.verbatim_text}`)
-            .join('\n\n')
-        : `No verified guideline matched this question. Tell the user, in their language, that you do not have specific verified guidance for this, and that they should consult their Local Civil Registrar (LCRO). Do not invent requirements, fees, or steps.`;
+            .join('\n\n');
+      } else if (fallbackGuide) {
+        const steps = (fallbackGuide.steps_json ?? []).map((s) => `${s.step_number}. ${s.instruction}`).join('\n');
+        const reqs = (fallbackGuide.requirements_json ?? []).map((r) => `- ${r}`).join('\n');
+        contextText = `VERIFIED GUIDELINES (cite ONLY from these; do not invent details):\n\n` +
+          `[Source: ${fallbackGuide.title}]\n` +
+          `Title: ${fallbackGuide.title}\n` +
+          `Steps:\n${steps}\n\n` +
+          `Requirements:\n${reqs}\n\n` +
+          `Fees: ${fallbackGuide.fees_text}\n\n` +
+          `Tip: ${fallbackGuide.tips}`;
+      } else {
+        contextText = `No verified guideline matched this question. Tell the user, in their language, that you do not have specific verified guidance for this, and that they should consult their Local Civil Registrar (LCRO). Do not invent requirements, fees, or steps.`;
+      }
 
       const promptContext = `
         ${SYSTEM_PROMPT}

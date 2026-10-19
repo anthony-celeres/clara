@@ -9,6 +9,17 @@ import {
   removeLocalChecklist
 } from '../lib/offline-cache';
 
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export interface ChecklistItem {
   text: string;
   checked: boolean;
@@ -76,7 +87,7 @@ export function useChecklist(userId: string | null, isOffline: boolean) {
   const createChecklist = async (title: string, itemTexts: string[], sessionId: string | null = null) => {
     const items: ChecklistItem[] = itemTexts.map(text => ({ text, checked: false }));
     const newChecklist: Checklist = {
-      checklist_id: Math.random().toString(36).substring(2, 15),
+      checklist_id: generateUUID(),
       session_id: sessionId,
       user_id: userId,
       title,

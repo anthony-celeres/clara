@@ -14,42 +14,50 @@ const ADMIN_ONLY_PATHS = [
 const ADMIN_API_METHODS = ['POST', 'PUT', 'DELETE'];
 
 const isLiveSupabase =
-  process.env.NEXT_PUBLIC_SUPABASE_URL &&
-  process.env.NEXT_PUBLIC_SUPABASE_URL !== 'your_supabase_url' &&
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== 'your_supabase_anon_key';
+  process.env.NEXT_PUBLIC_FORCE_MOCK !== 'true' &&
+  Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    process.env.NEXT_PUBLIC_SUPABASE_URL !== 'your_supabase_url' &&
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== 'your_supabase_anon_key'
+  );
 
 async function getLiveUser(
   request: NextRequest,
   response: NextResponse
 ): Promise<{ role: string | null } | null> {
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, options);
+            });
+          },
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
-          });
-        },
-      },
-    }
-  );
+      }
+    );
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
 
-  const { data } = await supabase
-    .from('users')
-    .select('role')
-    .eq('user_id', user.id)
-    .single();
+    const { data } = await supabase
+      .from('users')
+      .select('role')
+      .eq('user_id', user.id)
+      .single();
 
-  return { role: data?.role ?? null };
+    return { role: data?.role ?? null };
+  } catch (err) {
+    console.warn('Proxy: Error fetching live user, checking fallback:', err);
+    return null;
+  }
 }
 
 // MOCK mode: read the clara-mock-session cookie set by supabase.ts shim
@@ -74,6 +82,15 @@ export async function proxy(request: NextRequest) {
     const liveUser = await getLiveUser(request, response);
     hasSession = liveUser !== null;
     userRole = liveUser?.role ?? null;
+
+    // Graceful fallback to mock session cookie if live user not found
+    if (!hasSession) {
+      const mockUser = getMockUser(request);
+      if (mockUser) {
+        hasSession = true;
+        userRole = mockUser.role ?? null;
+      }
+    }
   } else {
     const mockUser = getMockUser(request);
     hasSession = mockUser !== null;
