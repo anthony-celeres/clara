@@ -1,5 +1,6 @@
 // app/api/chat/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { createOpenAI } from '@ai-sdk/openai';
 import { google } from '@ai-sdk/google';
 import { streamText } from 'ai';
 import { detectLanguage } from '@/lib/language-detect';
@@ -39,79 +40,169 @@ async function fetchGuide(kbId: number, lang: string): Promise<Guide | null> {
   return (match as Guide) ?? null;
 }
 
-// --- RAG retrieval (ADR-001) -------------------------------------------------
-const EMBED_MODEL = 'gemini-embedding-001'; // verified live 2026-06-23; pin it
-const EMBED_DIM = 768;                       // matches doc_chunks.embedding vector(768)
-const RELEVANCE_THRESHOLD = 0.6;             // below this → defer to LCRO (tune on eval set)
+// --- Zero-Cost RAG retrieval (PostgreSQL FTS / Keyword Search) ---------------
+// Replaces external embedding model API calls.
+// Retrieves verified civil legal guidelines using exact legal match + text search.
+async function retrieveVerifiedContent(sanitizedQuery: string, lang: string): Promise<{ contextText: string; matchedGuide: Guide | null }> {
+  const queryLower = sanitizedQuery.toLowerCase();
 
-interface RetrievedChunk {
-  chunk_id: number;
-  guide_id: number | null;
-  kb_id: number | null;
-  chunk_title: string | null;
-  verbatim_text: string;
-  similarity: number;
-}
+  // 1. Keyword intent matching for core civil cases
+  let matchedKbId: number | null = null;
+  if (
+    queryLower.includes('clerical') ||
+    queryLower.includes('correct') ||
+    queryLower.includes('error') ||
+    queryLower.includes('apelyido') ||
+    queryLower.includes('avocado') ||
+    queryLower.includes('avocardo') ||
+    queryLower.includes('9048') ||
+    queryLower.includes('spelling')
+  ) {
+    matchedKbId = 101;
+  } else if (
+    queryLower.includes('late') ||
+    queryLower.includes('huli') ||
+    queryLower.includes('delayed') ||
+    queryLower.includes('negative') ||
+    queryLower.includes('saksi') ||
+    queryLower.includes('witness') ||
+    queryLower.includes('rehistro')
+  ) {
+    matchedKbId = 102;
+  } else if (
+    queryLower.includes('indigenous') ||
+    queryLower.includes('katutubo') ||
+    queryLower.includes('lumad') ||
+    queryLower.includes('tboli') ||
+    queryLower.includes('chieftan') ||
+    queryLower.includes('chieftain') ||
+    queryLower.includes('8371') ||
+    queryLower.includes('brap') ||
+    queryLower.includes('tribal')
+  ) {
+    matchedKbId = 103;
+  }
 
-// Embed the query with Gemini and return the normalized vector as a number[]
-// (the shape supabase.rpc passes to a pgvector param), or null if embedding
-// fails (caller then degrades to the no-match path).
-async function embedQuery(text: string, apiKey: string): Promise<number[] | null> {
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: { parts: [{ text }] },
-          taskType: 'RETRIEVAL_QUERY',
-          outputDimensionality: EMBED_DIM,
-        }),
+  // 2. Fetch guide from DB (or seed fallback)
+  let guide: Guide | null = null;
+  if (matchedKbId) {
+    guide = await fetchGuide(matchedKbId, lang);
+  } else {
+    // 3. PostgreSQL text search across guides table (if DB connected)
+    try {
+      const words = sanitizedQuery
+        .replace(/[^\w\s]/g, '')
+        .split(/\s+/)
+        .filter((w) => w.length > 3);
+
+      if (words.length > 0) {
+        const pattern = `%${words[0]}%`;
+        const { data: dbMatches } = await supabase
+          .from('guides')
+          .select('*')
+          .or(`title.ilike.${pattern},tips.ilike.${pattern},fees_text.ilike.${pattern}`)
+          .limit(3);
+
+        if (dbMatches && dbMatches.length > 0) {
+          guide = (dbMatches.find((g: any) => g.language === lang) || dbMatches[0]) as Guide;
+        }
       }
-    );
-    if (!res.ok) {
-      console.error('query embed failed:', res.status, await res.text());
-      return null;
+    } catch (e) {
+      console.warn('Postgres text search failed:', e);
     }
-    const v: number[] = (await res.json())?.embedding?.values ?? [];
-    if (v.length !== EMBED_DIM) {
-      console.error('query embed dim mismatch:', v.length);
-      return null;
+
+    // 4. In-memory fallback across GUIDES_SEED if DB had no match
+    if (!guide) {
+      const matched = GUIDES_SEED.find((g) => {
+        const text = `${g.title} ${g.tips} ${g.fees_text} ${g.requirements_json.join(' ')}`.toLowerCase();
+        return queryLower.split(' ').some((word) => word.length > 3 && text.includes(word));
+      });
+      if (matched) {
+        guide = (GUIDES_SEED.find((g) => g.kb_id === matched.kb_id && g.language === lang)
+          || GUIDES_SEED.find((g) => g.kb_id === matched.kb_id && g.language === 'fil')
+          || matched) as Guide;
+      }
     }
-    // MRL-truncated vectors aren't unit length; normalize (corpus was normalized too).
-    const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
-    return v.map((x) => x / norm);
-  } catch (e) {
-    console.error('query embed error:', e);
-    return null;
   }
+
+  if (guide) {
+    const steps = (guide.steps_json ?? []).map((s) => `${s.step_number}. ${s.instruction}`).join('\n');
+    const reqs = (guide.requirements_json ?? []).map((r) => `- ${r}`).join('\n');
+    const contextText =
+      `VERIFIED GUIDELINES (cite ONLY from these; do not invent details):\n\n` +
+      `[Source: ${guide.title}]\n` +
+      `Title: ${guide.title}\n` +
+      `Steps:\n${steps}\n\n` +
+      `Requirements:\n${reqs}\n\n` +
+      `Fees: ${guide.fees_text}\n\n` +
+      `Tip: ${guide.tips}`;
+
+    return { contextText, matchedGuide: guide };
+  }
+
+  return {
+    contextText: `No verified guideline matched this question. Tell the user, in their language, that you do not have specific verified guidance for this, and that they should consult their Local Civil Registrar (LCRO). Do not invent requirements, fees, or steps.`,
+    matchedGuide: null,
+  };
 }
 
-// Cosine kNN over activated chunks via the match_doc_chunks RPC, with a 'fil'
-// language fallback and the relevance gate applied.
-async function retrieveChunks(query: string, lang: string, apiKey: string): Promise<RetrievedChunk[]> {
-  const embedding = await embedQuery(query, apiKey);
-  if (!embedding) return [];
+// --- Multi-Provider LLM Selector ---------------------------------------------
+// Priority:
+// 1. Groq (Free Cloud Llama 3.3 / Llama 3.1)
+// 2. Ollama (Free Local Llama / Mistral)
+// 3. Google Gemini (Free Tier Fallback)
+// 4. Mock Stream
+interface ActiveModelConfig {
+  provider: 'groq' | 'ollama' | 'gemini';
+  modelName: string;
+  model: any;
+}
 
-  const run = async (matchLang: string): Promise<RetrievedChunk[]> => {
-    const { data, error } = await supabase.rpc('match_doc_chunks', {
-      query_embedding: embedding,
-      match_language: matchLang,
-      match_count: 5,
+function getLanguageModel(): ActiveModelConfig | null {
+  const groqApiKey = process.env.GROQ_API_KEY;
+  const useOllama = process.env.USE_OLLAMA === 'true' || Boolean(process.env.OLLAMA_BASE_URL);
+  const geminiApiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+  // 1. Groq (Cloud - Free open-source inference)
+  if (groqApiKey && groqApiKey !== 'your_groq_api_key') {
+    const groq = createOpenAI({
+      baseURL: 'https://api.groq.com/openai/v1',
+      apiKey: groqApiKey,
     });
-    if (error) {
-      console.error('match_doc_chunks error:', error.message);
-      return [];
-    }
-    return (data as RetrievedChunk[]) ?? [];
-  };
-
-  let rows = (await run(lang)).filter((c) => c.similarity >= RELEVANCE_THRESHOLD);
-  if (rows.length === 0 && lang !== 'fil') {
-    rows = (await run('fil')).filter((c) => c.similarity >= RELEVANCE_THRESHOLD);
+    const modelName = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+    return {
+      provider: 'groq',
+      modelName,
+      model: groq(modelName),
+    };
   }
-  return rows;
+
+  // 2. Ollama (Local open-source inference)
+  if (useOllama) {
+    const baseURL = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '') + '/v1';
+    const ollama = createOpenAI({
+      baseURL,
+      apiKey: 'ollama',
+    });
+    const modelName = process.env.OLLAMA_MODEL || 'llama3.2';
+    return {
+      provider: 'ollama',
+      modelName,
+      model: ollama(modelName),
+    };
+  }
+
+  // 3. Google Gemini (Cloud fallback)
+  if (geminiApiKey && geminiApiKey !== 'your_gemini_api_key') {
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    return {
+      provider: 'gemini',
+      modelName,
+      model: google(modelName),
+    };
+  }
+
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -129,48 +220,12 @@ export async function POST(req: NextRequest) {
     // 1. Language detection
     const lang = detectLanguage(sanitizedQuery) as Language;
 
-    // 2. Retrieval mode depends on whether the live LLM/embedding API is wired
-    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    const hasLiveAPI = apiKey && apiKey !== 'your_gemini_api_key';
+    // 2. Determine active LLM provider (Groq -> Ollama -> Gemini -> Mock)
+    const modelConfig = getLanguageModel();
 
-    if (hasLiveAPI) {
-      // LIVE MODE: RAG — embed the query, cosine-retrieve activated chunks,
-      // ground Gemini on their verbatim text (ADR-001 §6).
-      const chunks = await retrieveChunks(sanitizedQuery, lang, apiKey!);
-
-      // If vector search returned 0 chunks (empty corpus, unverified chunks, or DB offline),
-      // fall back to matching verified structured guides before declaring "no match".
-      let fallbackGuide: Guide | null = null;
-      if (chunks.length === 0) {
-        const queryLower = sanitizedQuery.toLowerCase();
-        if (queryLower.includes('clerical') || queryLower.includes('correct') || queryLower.includes('error') || queryLower.includes('apelyido') || queryLower.includes('avocado') || queryLower.includes('avocardo') || queryLower.includes('9048')) {
-          fallbackGuide = await fetchGuide(101, lang);
-        } else if (queryLower.includes('late') || queryLower.includes('huli') || queryLower.includes('negative') || queryLower.includes('saksi') || queryLower.includes('witness') || queryLower.includes('rehistro')) {
-          fallbackGuide = await fetchGuide(102, lang);
-        } else if (queryLower.includes('indigenous') || queryLower.includes('katutubo') || queryLower.includes('lumad') || queryLower.includes('tboli') || queryLower.includes(' chieftan') || queryLower.includes('chieftain') || queryLower.includes('8371') || queryLower.includes('brap')) {
-          fallbackGuide = await fetchGuide(103, lang);
-        }
-      }
-
-      let contextText = '';
-      if (chunks.length > 0) {
-        contextText = `VERIFIED GUIDELINES (cite ONLY from these; do not invent details):\n\n` +
-          chunks
-            .map((c, i) => `[Source ${i + 1}: ${c.chunk_title ?? 'Guide'}]\n${c.verbatim_text}`)
-            .join('\n\n');
-      } else if (fallbackGuide) {
-        const steps = (fallbackGuide.steps_json ?? []).map((s) => `${s.step_number}. ${s.instruction}`).join('\n');
-        const reqs = (fallbackGuide.requirements_json ?? []).map((r) => `- ${r}`).join('\n');
-        contextText = `VERIFIED GUIDELINES (cite ONLY from these; do not invent details):\n\n` +
-          `[Source: ${fallbackGuide.title}]\n` +
-          `Title: ${fallbackGuide.title}\n` +
-          `Steps:\n${steps}\n\n` +
-          `Requirements:\n${reqs}\n\n` +
-          `Fees: ${fallbackGuide.fees_text}\n\n` +
-          `Tip: ${fallbackGuide.tips}`;
-      } else {
-        contextText = `No verified guideline matched this question. Tell the user, in their language, that you do not have specific verified guidance for this, and that they should consult their Local Civil Registrar (LCRO). Do not invent requirements, fees, or steps.`;
-      }
+    if (modelConfig) {
+      // Zero-cost RAG: retrieve verified guidelines from Postgres / structured guides
+      const { contextText } = await retrieveVerifiedContent(sanitizedQuery, lang);
 
       const promptContext = `
         ${SYSTEM_PROMPT}
@@ -181,16 +236,11 @@ export async function POST(req: NextRequest) {
       `;
 
       const result = streamText({
-        model: google('gemini-2.5-flash'),
+        model: modelConfig.model,
         prompt: promptContext,
       });
 
-      // Re-encode Gemini's token stream into the "0:\"text\"" data-stream
-      // format the chat client parses (chat/page.tsx) — the same format mock
-      // mode emits. We consume fullStream (not textStream) because in ai v6 an
-      // upstream failure (bad key, retired model) surfaces as an 'error' part
-      // and does NOT throw from textStream; degrade to a grounded fallback
-      // message instead of a silent empty stream.
+      // Re-encode token stream into the "0:\"text\"" data-stream format
       const encoder = new TextEncoder();
       const FALLBACK =
         'Paumanhin, nagkaroon ng problema sa koneksyon ngayon. Pakisubukan muli, o kumonsulta sa inyong Local Civil Registrar (LCRO).';
@@ -205,12 +255,12 @@ export async function POST(req: NextRequest) {
                 if (text) controller.enqueue(encoder.encode(`0:${JSON.stringify(text)}\n`));
               } else if (part.type === 'error') {
                 degraded = true;
-                console.error('Gemini stream error:', (part as any).error);
+                console.error(`${modelConfig.provider} stream error:`, (part as any).error);
                 controller.enqueue(encoder.encode(`0:${JSON.stringify(FALLBACK)}\n`));
               }
             }
           } catch (err) {
-            console.error('Gemini stream threw:', err);
+            console.error(`${modelConfig.provider} stream threw:`, err);
             if (!degraded) controller.enqueue(encoder.encode(`0:${JSON.stringify(FALLBACK)}\n`));
           } finally {
             controller.close();
@@ -222,20 +272,14 @@ export async function POST(req: NextRequest) {
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
           'x-vercel-ai-data-stream': 'v1',
+          'x-clara-provider': modelConfig.provider,
+          'x-clara-model': modelConfig.modelName,
         },
       });
     } else {
-      // MOCK MODE: no embedding API available — fall back to keyword intent
-      // matching against the seeded guides + canned responses.
-      let matchedGuide: Guide | null = null;
+      // MOCK MODE: simulated typing stream
+      const { matchedGuide } = await retrieveVerifiedContent(sanitizedQuery, lang);
       const queryLower = sanitizedQuery.toLowerCase();
-      if (queryLower.includes('clerical') || queryLower.includes('correct') || queryLower.includes('error') || queryLower.includes('apelyido') || queryLower.includes('avocado') || queryLower.includes('avocardo') || queryLower.includes('9048')) {
-        matchedGuide = await fetchGuide(101, lang);
-      } else if (queryLower.includes('late') || queryLower.includes('huli') || queryLower.includes('negative') || queryLower.includes('saksi') || queryLower.includes('witness') || queryLower.includes('rehistro')) {
-        matchedGuide = await fetchGuide(102, lang);
-      } else if (queryLower.includes('indigenous') || queryLower.includes('katutubo') || queryLower.includes('lumad') || queryLower.includes('tboli') || queryLower.includes(' chieftan') || queryLower.includes('chieftain') || queryLower.includes('8371') || queryLower.includes('brap')) {
-        matchedGuide = await fetchGuide(103, lang);
-      }
       return generateMockResponseStream(lang, matchedGuide, queryLower);
     }
   } catch (e: any) {
