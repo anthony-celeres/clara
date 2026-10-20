@@ -94,11 +94,11 @@ export async function GET() {
       results.push(`📊 Total guides in database: ${guideCount}`)
     }
 
-    const { count: personaCount } = await supabase
+    const { count: personaCount, error: personaCountError } = await supabase
       .from('personas')
       .select('*', { count: 'exact', head: true })
     
-    if (!personaCount) {
+    if (!personaCountError) {
       results.push(`📊 Total personas in database: ${personaCount || 0}`)
     }
 

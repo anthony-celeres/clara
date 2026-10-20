@@ -43,6 +43,10 @@ create index if not exists doc_chunks_embedding_idx
 create index if not exists doc_chunks_lang_status_idx
   on doc_chunks (language, effective_status);
 
+-- Zero-cost full text / trigram search index
+create index if not exists doc_chunks_verbatim_trgm_idx
+  on doc_chunks using gin (verbatim_text gin_trgm_ops);
+
 -- 4. row-level security --------------------------------------------------------
 -- Public (anon + authenticated) may read ONLY activated chunks — mirrors the
 -- public-read posture of guides/knowledge_base/sources (handoff 01 §3).
